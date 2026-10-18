@@ -21,19 +21,19 @@ def _intents():
         # specific intents first (ordering matters — see tests)
         ("trial_pass_rates",
          re.compile(r"pass rate|trial outcomes|trials for", re.IGNORECASE),
-         lambda q: _trial_pass_rates(q)),
+         _trial_pass_rates),
         ("formulations_by_status",
          re.compile(r"formulation", re.IGNORECASE),
-         lambda q: _formulations_by_status(q)),
+         _formulations_by_status),
         ("substitution_options",
          re.compile(r"substitut|swap|replace .* with", re.IGNORECASE),
-         lambda q: _substitution_options(q)),
+         _substitution_options),
         ("cost_impact",
          re.compile(r"\bcost\b", re.IGNORECASE),
-         lambda q: _cost_impact(q)),
+         _cost_impact),
         ("claim_coverage",
          re.compile(r"\bclaim\b", re.IGNORECASE),
-         lambda q: _claim_coverage(q)),
+         _claim_coverage),
     ]
 
 
