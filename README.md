@@ -10,6 +10,16 @@ gates, and a hash-chained audit trail.
 > agents, FastAPI service, Azure IaC), see
 > [Jagadish-food-ingredients-agentic-ai](https://github.com/jagadishmazure-jpg/Jagadish-food-ingredients-agentic-ai).
 > This repo is the operations-focused FDE showcase on the same domain.
+>
+> **Boundary.** Both repos suggest substitutions, differently. The
+> original maps each flagged non-clean-label ingredient to a preferred
+> clean-label swap (fixed demo map, cost-sorted fallback) inside a
+> multi-agent reformulation graph that *predicts* texture and shelf life
+> and *estimates* cycle time. This repo ranks several candidates per claim
+> brief with a weighted, floor-gated score (SUB-FUNC/CLAIM/COST/LABEL) and
+> *records* actual pilot-trial outcomes against SOP-03 criteria. It has no
+> supply-chain, ESG or customer-advisor agents, no FastAPI service and no
+> cloud infrastructure.
 
 > **Recruiter summary.** Reformulating a product for "clean label" or
 > "reduced sugar" means trading functional match, cost, and label impact
@@ -17,9 +27,10 @@ gates, and a hash-chained audit trail.
 > on SQLite, text-to-SQL over read-only views, a substitution engine
 > that prints its math (date paste 0.8559 vs stevia 0.5865 for a
 > reduced-sugar brief), and a trial tracker with per-criterion failing
-> lists (F-CLEAN-01: 3 cycles, texture the blocker). 57 tests, all green.
+> lists (F-CLEAN-01: 3 cycles, texture the blocker). Test count below,
+> checked by CI.
 
-All data is synthetic and fictional (Verdant Pantry Foods, an invented
+All data is synthetic and fictional (Glinthaven Foods, an invented
 manufacturer). No real brands appear anywhere in this repo. This project
 is independent and unaffiliated with any food company.
 
@@ -62,7 +73,7 @@ is entirely food-ingredient R&D.
 ## Quickstart
 
 ```bash
-python -m pytest tests/ -q          # 57 tests, stdlib only
+python -m pytest tests/ -q          # full suite, stdlib only
 pip install streamlit               # optional, demo only
 streamlit run demo/app.py
 ```
@@ -104,13 +115,15 @@ date paste: 0.50*0.82(func) + 0.30*0.82(cost) + 0.20*1.00(label) = 0.8559; cost 
 
 - SELECT-only gateway: write keywords rejected even inside statements;
   string literals stripped before the scan (no false positives); 100-row cap
-- Only the four published views may be queried — raw base tables, comma-join
-  smuggling, quoted `sqlite_master`, and comment-obfuscated names are denied
-  by a SQLite authorizer backstop (`fooding/authz.py`); see
+- Only the four published views may be queried. Independently of the text
+  check, the SQLite authorizer (`fooding/authz.py`) allows a base-table
+  read only on behalf of a published view, so raw tables named directly
+  (comma joins, quoted or parenthesised names, comment tricks) are denied,
+  and `sqlite_master`, writes and `load_extension` always are; see
   `docs/adr/0001-sqlite-authorizer-backstop.md`
 - Gateway and escalation errors never echo raw row data
 - Formula approvals and label-claim sign-offs are confirmation-gated (T4)
-- Feedback free text PII-scrubbed before it reaches the audit log
+- Feedback free text PII-scrubbed (email, phone, SSN, card, account) before it reaches the audit log
 - Threat model: `docs/threat-model.md`
 
 ## Limitations and known failures
@@ -124,6 +137,72 @@ date paste: 0.50*0.82(func) + 0.30*0.82(cost) + 0.20*1.00(label) = 0.8559; cost 
   embeddings.
 - The live price feed is a stub that reports a gap; wire a real source
   before relying on it.
+- Stage changes are not derived from trials: SOP-01's "two consecutive
+  passes to approve, three same-criterion fails or two micro fails to
+  reject" is not enforced. The seeded F-LEG-01 is "rejected" after one
+  micro failure because the seed data says so.
+- SUB-CLAIM-01 checks only what the ingredient table records (clean-label
+  flag, milk allergen). Reduced-sugar and high-protein thresholds need
+  nutrition data this repo does not have.
+- Gateway: the authorizer allows an empty-column read of a table behind a
+  view (needed for view self-joins), so `SELECT count(*)` of such a table
+  returns a count if the text check is bypassed; no column data is
+  readable.
+
+## Standardization review (2026-10-18)
+
+grokbot-portfolio reviewed this repo against the portfolio standard. Each
+bug below has a regression test (`tests/test_fooding.py`, "review fixes"
+section, and `tests/test_authorizer_strict.py`) that fails on the old code.
+
+- **Gateway bypass.** The literal stripper also removed double-quoted
+  text, but double quotes are identifiers in SQLite, so
+  `SELECT * FROM "ingredients"` passed the FROM check; `FROM (ingredients)`
+  and `FROM (v_cost_impact), ingredients` passed too. The authorizer
+  allowed every table behind a view, so all of these read the raw table.
+  The text check now sees quoted and parenthesised names, and the
+  authorizer allows a base-table read only on behalf of a published view
+  (ADR 0001, revision).
+- **The default demo question returned nothing.** "Suggest substitutes for
+  cane sugar for reduced sugar" searched for an ingredient named "cane
+  sugar for reduced sugar". The claim is now parsed as a filter.
+- **Trial records could contradict SOP-03.** `record_trial` accepted
+  `outcome="pass"` with the micro panel failed or sensory below 6. The
+  outcome must now match the criteria (TRIAL-OUTCOME-01).
+- **Substitutes were not checked against the claim.** A candidate whose
+  own ingredient record breaks the target claim (not clean label, or a
+  milk allergen under "dairy free") could rank first. It is now rejected
+  (SUB-CLAIM-01). The seeded candidates all pass, so the seed ranking is
+  unchanged (date paste 0.8559, stevia 0.5865).
+- Card numbers are now redacted alongside email, phone, SSN and account.
+- The fictional manufacturer name matched real small food businesses; it
+  is now Glinthaven Foods.
+
+Differentiator on the seeded data (regenerated and checked by CI on every push):
+
+<!-- run: python scripts/show_differentiator.py -->
+```text
+Substitutes for cane sugar under 'reduced sugar':
+  date paste: 0.50*0.82(func) + 0.30*0.82(cost) + 0.20*1.00(label) = 0.8559; cost delta +2.20/kg; label improves
+  stevia leaf extract: 0.50*0.61(func) + 0.30*0.27(cost) + 0.20*1.00(label) = 0.5865; cost delta +26.80/kg; label improves
+Demo question -> 2 rows: ['date paste', 'stevia leaf extract']
+Trial tracker (SOP-03 criteria):
+  F-CLEAN-01: 2/3 passed, failing criteria ['texture']
+  F-SUGAR-01: 1/2 passed, failing criteria ['sensory']
+  F-PRO-01: 2/2 passed, failing criteria []
+  F-LEG-01: 0/1 passed, failing criteria ['micro']
+  record 'pass' with micro failed -> TRIAL-OUTCOME-01: outcome 'pass' contradicts the SOP-03 criteria (sensory 8, texture 8, shelf_ok 1, micro_ok 0 -> fail)
+Gateway: SELECT * FROM "ingredients" -> SEC-SELECT-03: only published views may be queried, blocked: ['ingredients']
+```
+<!-- /run -->
+
+Test count (also checked by CI):
+
+<!-- run: python scripts/count_tests.py -->
+```text
+109 tests collected
+```
+<!-- /run -->
 
 ## Built / Written-not-run / Planned
 
@@ -139,6 +218,7 @@ date paste: 0.50*0.82(func) + 0.30*0.82(cost) + 0.20*1.00(label) = 0.8559; cost 
 | Hash-chained audit | Built |
 | PII-scrubbed feedback | Built |
 | Streamlit demo | Built (demo only; `pip install streamlit`) |
+| CI: ruff, pytest, docs drift check, hashed brand check, gitleaks; CodeQL; Dependabot | Built (runs on every push) |
 | Live price vendor integration | Planned |
 | Weight calibration against historical swaps | Planned |
 | Deployment | Planned (nothing deployed) |
@@ -148,7 +228,8 @@ date paste: 0.50*0.82(func) + 0.30*0.82(cost) + 0.20*1.00(label) = 0.8559; cost 
 Part of a 12-domain end-to-end showcase series sharing one agentic
 spine: cold-chain logistics, retail ops, healthcare ops, insurance
 underwriting, warehouse ops, energy grid, telecom incident, airline
-disruption, pharma QA, predictive maintenance, marketplace seller.
+disruption, pharma QA, predictive maintenance, marketplace seller,
+property ops, contract lifecycle.
 Each repo documents how its domain logic differs.
 
 ## Knowledge

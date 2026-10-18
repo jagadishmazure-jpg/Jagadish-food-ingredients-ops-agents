@@ -9,6 +9,9 @@ Cited rules:
   SUB-FUNC-02: func_match below 0.50 is rejected — not a real substitute.
   SUB-COST-01: cost deltas are always reported per-kg, never hidden.
   SUB-LABEL-01: label impact is reported as improves/neutral/worsens.
+  SUB-CLAIM-01: a candidate whose own ingredient record breaks the target
+               claim (SOP-04: clean label needs a clean-label ingredient,
+               dairy free excludes milk allergens) is rejected.
 
 Score = 0.50*func_match + 0.30*cost_score + 0.20*label_score, where
   cost_score  = 1 / (1 + max(0, cost_delta)/10)   (cheaper-or-equal -> 1.0)
@@ -21,6 +24,22 @@ import sqlite3
 
 _LABEL_SCORE = {"improves": 1.0, "neutral": 0.5, "worsens": 0.0}
 _FUNC_FLOOR = 0.50  # SUB-FUNC-02
+
+
+def _breaks_claim(conn: sqlite3.Connection, ingredient: str, claim: str) -> bool:
+    """SUB-CLAIM-01: does the substitute's ingredient record violate the claim?"""
+    row = conn.execute(
+        "SELECT clean_label, allergen FROM ingredients WHERE lower(name) = lower(?)",
+        (ingredient,)).fetchone()
+    if row is None:
+        return False  # no record to check; the label specialist verifies at sign-off
+    clean_label, allergen = row
+    claim = claim.lower()
+    if claim == "clean label" and not clean_label:
+        return True
+    if claim == "dairy free" and (allergen or "").lower() == "milk":
+        return True
+    return False
 
 
 def _cost_score(cost_delta: float) -> float:
@@ -43,8 +62,10 @@ def rank_substitutes(conn: sqlite3.Connection, original: str,
         (original.strip(), target_claim.strip()),
     )
     options = []
-    for sub_id, sub, claim, func_match, cost_delta, label_impact in cur:
+    for sub_id, sub, _claim, func_match, cost_delta, label_impact in cur:
         if func_match < _FUNC_FLOOR:  # SUB-FUNC-02
+            continue
+        if _breaks_claim(conn, sub, target_claim):  # SUB-CLAIM-01
             continue
         cs = _cost_score(cost_delta)
         ls = _LABEL_SCORE.get(label_impact, 0.5)

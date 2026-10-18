@@ -8,11 +8,13 @@ Rule IDs (cited in tests and README):
                  literals are stripped before the scan so 'UPDATE' inside a
                  quoted value does not false-positive.
   SEC-SELECT-03: every query is capped at 100 rows AND may only touch the
-                 published views. A SQLite authorizer backstop (fooding/authz.py)
-                 denies reads on anything else — sqlite_master, raw base
-                 tables, comma-join smuggling, quoted identifiers,
-                 comment-obfuscated names. Denied access raises GatewayError
-                 citing this rule.
+                 published views. The SQLite authorizer (fooding/authz.py)
+                 enforces this independently of the text check: a base table
+                 is readable only on behalf of a published view, never when
+                 named directly (comma joins, quoted or parenthesised names,
+                 comment tricks), and sqlite_master, writes and
+                 load_extension are always denied. Denied access raises
+                 GatewayError citing this rule.
 """
 
 from __future__ import annotations
@@ -63,15 +65,13 @@ def create_views(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-# Base tables the views are built on. The authorizer must allow READ on these
-# because SQLite touches them when expanding a view — but the FROM-clause
-# check below ensures queries can only *name* the views, never these tables.
-_BASE_TABLES = {"formulations", "trials", "substitutions", "ingredients"}
-
-
 def _strip_literals(sql: str) -> str:
-    """Remove single/double-quoted literals so keyword scans don't false-positive."""
-    return re.sub(r"('[^']*'|\"[^\"]*\")", "''", sql)
+    """Remove single-quoted string literals so keyword scans don't false-positive.
+
+    Double quotes are identifiers in SQLite (``FROM "ingredients"`` names a
+    table), so they are kept for the FROM check to see.
+    """
+    return re.sub(r"'(?:[^']|'')*'", "''", sql)
 
 
 def _first_keyword(sql: str) -> str:
@@ -97,7 +97,7 @@ _CLAUSE_END = re.compile(
     re.IGNORECASE,
 )
 
-_TABLE_IDENT = re.compile(r'["\'\[]?([A-Za-z_][\w]*)["\'\]]?')
+_TABLE_IDENT = re.compile(r'\(*\s*["`\[]?([A-Za-z_][\w]*)["`\]]?')
 
 
 def _referenced_tables(sql: str) -> set[str]:
@@ -122,7 +122,7 @@ def _referenced_tables(sql: str) -> set[str]:
                 segment = segment[:idx]
         for part in segment.split(","):
             tm = _TABLE_IDENT.match(part.strip())
-            if tm:
+            if tm and tm.group(1).lower() not in ("select", "with", "values"):
                 tables.add(tm.group(1).lower())
     return tables
 
@@ -146,15 +146,16 @@ def run_query(conn: sqlite3.Connection, sql: str):
             f"blocked: {sorted(bad)}"
         )
     try:
-        with views_only(conn, allowed_views, _BASE_TABLES):
+        with views_only(conn, allowed_views) as denied:
             cur = conn.execute(cleaned)
             # Row cap is enforced at fetch time (fetchmany), never by trusting
             # the query's own LIMIT — LIMIT 100000, LIMIT n OFFSET m, and
             # LIMIT inside subqueries all bypass LIMIT-rewriting.
-            rows = cur.fetchmany(ROW_CAP + 1)
+            rows = cur.fetchmany(ROW_CAP)  # SEC-SELECT-03
     except sqlite3.DatabaseError as e:
-        raise GatewayError(f"SEC-SELECT-03: denied by authorizer: {e}")
-    if len(rows) > ROW_CAP:
-        rows = rows[:ROW_CAP]  # SEC-SELECT-03
+        if denied:
+            raise GatewayError(
+                f"SEC-SELECT-03: denied by authorizer: {sorted(set(denied))}") from e
+        raise GatewayError(f"SEC-SELECT-01: query failed ({e})") from e
     cols = [d[0] for d in cur.description] if cur.description else []
     return cols, [dict(zip(cols, r)) for r in rows]

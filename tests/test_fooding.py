@@ -1,17 +1,16 @@
 """Regression checks for Jagadish-food-ingredients-ops-agents (synthetic data)."""
 
-import sqlite3
 
 import pytest
 
 from fooding import audit, escalation, feedback, pii, pricesignal, sop_rag, substitute, text2sql, trials
-from fooding.orchestrator import Orchestrator
 from fooding.demo_helpers import (
     answer_question,
     price_showcase,
     substitution_showcase,
     trial_showcase,
 )
+from fooding.orchestrator import Orchestrator
 from fooding.telemetry import build_db
 from fooding.views import GatewayError, create_views, run_query
 
@@ -377,3 +376,41 @@ def test_demo_trial_showcase():
 
 def test_demo_price_showcase():
     assert price_showcase()["usd_per_kg"] == pytest.approx(3.40)
+
+
+# ---------- review fixes (grokbot-portfolio, 2026-10-18) ----------
+
+def test_review_default_substitution_question_returns_rows(conn):
+    out = text2sql.answer(conn, "Suggest substitutes for cane sugar for reduced sugar")
+    assert [r["substitute"] for r in out["rows"]] == ["date paste", "stevia leaf extract"]
+    out = text2sql.answer(conn, "Suggest substitutes for whey protein isolate for dairy free")
+    assert [r["substitute"] for r in out["rows"]] == ["pea protein isolate"]
+
+
+@pytest.mark.parametrize("outcome,scores", [
+    ("pass", (8, 8, 1, 0)),   # micro panel failed
+    ("pass", (5, 8, 1, 1)),   # sensory below 6
+    ("fail", (8, 8, 1, 1)),   # every criterion met
+])
+def test_review_trial_outcome_must_match_sop03(conn, outcome, scores):
+    with pytest.raises(trials.TrialError, match="TRIAL-OUTCOME-01"):
+        trials.record_trial(conn, "F-CLEAN-01", "B-999", outcome, *scores)
+
+
+def test_review_consistent_trial_is_recorded(conn):
+    tid = trials.record_trial(conn, "F-CLEAN-01", "B-999", "pass", 7, 7, 1, 1)
+    assert conn.execute("SELECT outcome FROM trials WHERE trial_id = ?", (tid,)).fetchone()[0] == "pass"
+
+
+def test_review_candidate_breaking_the_claim_is_rejected(conn):
+    conn.execute("INSERT INTO substitutions VALUES ('SUB-90', 'palm shortening', "
+                 "'mono-diglycerides', 'clean label', 0.95, -1.0, 'improves')")
+    conn.execute("INSERT INTO substitutions VALUES ('SUB-91', 'pea protein isolate', "
+                 "'whey protein isolate', 'dairy free', 0.95, -1.0, 'neutral')")
+    clean = [o["substitute"] for o in substitute.rank_substitutes(conn, "palm shortening", "clean label")]
+    assert clean == ["sunflower oil"]   # mono-diglycerides is not clean label
+    assert substitute.rank_substitutes(conn, "pea protein isolate", "dairy free") == []  # whey is milk
+
+
+def test_review_card_numbers_are_redacted():
+    assert pii.scrub("card 4111-1111-1111-1111 lot 20261018") == ("card [CARD] lot 20261018", 1)
