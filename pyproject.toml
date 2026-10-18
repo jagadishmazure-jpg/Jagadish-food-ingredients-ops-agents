@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fooding"
+version = "0.1.0"
+description = "End-to-end food-ingredient R&D and formulation operations (synthetic data)"
+requires-python = ">=3.10"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fooding"]
