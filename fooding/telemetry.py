@@ -1,6 +1,6 @@
 """Synthetic food-ingredient R&D telemetry on SQLite (seeded, deterministic).
 
-Fictional manufacturer: Verdant Pantry Foods. Every ingredient, product,
+Fictional manufacturer: Glinthaven Foods. Every ingredient, product,
 brand and person in this file is invented for the demo. No real company
 names appear anywhere in this repo.
 """

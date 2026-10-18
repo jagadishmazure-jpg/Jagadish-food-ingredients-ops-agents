@@ -54,13 +54,22 @@ def _trial_pass_rates(q: str) -> str:
             f"WHERE form_id = '{fid}' GROUP BY outcome")
 
 
+_CLAIMS = r"(clean label|reduced sugar|high protein|dairy free)"
+
+
 def _substitution_options(q: str) -> str:
-    m = re.search(r"for\s+([a-z][a-z \-]+?)(?:\?|$)", q, re.IGNORECASE)
+    # "substitutes for <ingredient> [for|under <claim>]" -- the ingredient stops
+    # before a trailing claim, so the claim is a filter, not part of the name.
+    m = re.search(r"for\s+([a-z][a-z \-]+?)(?:\s+(?:for|under|to meet)\s+" + _CLAIMS
+                  + r")?\s*(?:\?|$)", q, re.IGNORECASE)
     if m:
         ing = m.group(1).strip().lower()
-        return ("SELECT sub_id, original, substitute, target_claim, func_match, "
-                f"cost_delta, label_impact FROM v_substitutions "
-                f"WHERE lower(original) LIKE '%{ing}%'")
+        sql = ("SELECT sub_id, original, substitute, target_claim, func_match, "
+               f"cost_delta, label_impact FROM v_substitutions "
+               f"WHERE lower(original) LIKE '%{ing}%'")
+        if m.group(2):
+            sql += f" AND lower(target_claim) = '{m.group(2).lower()}'"
+        return sql
     return ("SELECT sub_id, original, substitute, target_claim, func_match, "
             "cost_delta, label_impact FROM v_substitutions")
 

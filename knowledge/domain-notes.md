@@ -1,6 +1,6 @@
 # Domain notes — food-ingredient R&D operations
 
-Fictional setting: Verdant Pantry Foods, an invented manufacturer.
+Fictional setting: Glinthaven Foods, an invented manufacturer.
 No real brands appear anywhere in this repo.
 
 ## What R&D actually does here

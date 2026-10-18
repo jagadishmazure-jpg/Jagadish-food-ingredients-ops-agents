@@ -3,7 +3,7 @@
 try:
     import streamlit as st
 except ImportError:  # pragma: no cover
-    raise SystemExit("pip install streamlit  # demo only")
+    raise SystemExit("pip install streamlit  # demo only") from None
 
 from fooding.demo_helpers import (
     DEFAULT_QUESTIONS,
@@ -13,7 +13,7 @@ from fooding.demo_helpers import (
     trial_showcase,
 )
 
-st.title("Verdant Pantry Foods — R&D agent (synthetic demo)")
+st.title("Glinthaven Foods — R&D agent (synthetic demo)")
 st.caption("All data is fictional and seeded. No real brands.")
 
 q = st.selectbox("Ask a question", DEFAULT_QUESTIONS)

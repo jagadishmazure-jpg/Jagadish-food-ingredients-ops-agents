@@ -17,6 +17,8 @@ _PATTERNS = [
      "[PHONE]"),
     # SSN: strict 3-2-4 shape — does not match dates.
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[SSN]"),
+    # Card: four groups of four (space or dash) or 13-16 contiguous digits.
+    (re.compile(r"\b(?:\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}|\d{13,16})\b"), "[CARD]"),
     (re.compile(r"\b(?:acct|account)[\s#:]*\d{4,}\b", re.IGNORECASE), "[ACCOUNT]"),
 ]
 

@@ -10,9 +10,17 @@ from __future__ import annotations
 
 import sqlite3
 
+PANEL_FLOOR = 6  # SOP-03: sensory and texture must both be >= 6
+
 
 class TrialError(Exception):
     pass
+
+
+def batch_outcome(sensory: int, texture: int, shelf_ok: int, micro_ok: int) -> str:
+    """SOP-03 batch criteria: pass only when every criterion is met."""
+    ok = sensory >= PANEL_FLOOR and texture >= PANEL_FLOOR and shelf_ok == 1 and micro_ok == 1
+    return "pass" if ok else "fail"
 
 
 def record_trial(conn: sqlite3.Connection, form_id: str, batch_no: str,
@@ -27,6 +35,12 @@ def record_trial(conn: sqlite3.Connection, form_id: str, batch_no: str,
     for label, v in (("shelf_ok", shelf_ok), ("micro_ok", micro_ok)):
         if v not in (0, 1):
             raise TrialError(f"{label} must be 0/1, got {v!r}")
+    expected = batch_outcome(sensory, texture, shelf_ok, micro_ok)
+    if outcome != expected:
+        raise TrialError(
+            f"TRIAL-OUTCOME-01: outcome {outcome!r} contradicts the SOP-03 criteria "
+            f"(sensory {sensory}, texture {texture}, shelf_ok {shelf_ok}, micro_ok {micro_ok} "
+            f"-> {expected})")
     if not conn.execute(
             "SELECT 1 FROM formulations WHERE form_id = ?", (form_id,)).fetchone():
         raise TrialError(f"unknown formulation {form_id!r}")
@@ -54,9 +68,9 @@ def trial_summary(conn: sqlite3.Connection, form_id: str) -> dict:
     n = len(rows)
     n_pass = sum(1 for r in rows if r[0] == "pass")
     failing = []
-    if any(r[2] < 6 for r in rows):
+    if any(r[2] < PANEL_FLOOR for r in rows):
         failing.append("texture")
-    if any(r[1] < 6 for r in rows):
+    if any(r[1] < PANEL_FLOOR for r in rows):
         failing.append("sensory")
     if any(r[3] == 0 for r in rows):
         failing.append("shelf_life")

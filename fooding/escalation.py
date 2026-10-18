@@ -6,9 +6,8 @@ a named approver must confirm, and a timed-out gate denies by default.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
-
 
 TIERS = {
     "T1": "routine: answer directly from records",

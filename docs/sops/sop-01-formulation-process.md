@@ -2,7 +2,7 @@
 
 ## Purpose
 Defines the standard stages for developing a new food-ingredient
-formulation at Verdant Pantry Foods, from brief to approved formula.
+formulation at Glinthaven Foods, from brief to approved formula.
 
 ## Stages
 A formulation moves through four stages: draft, in-trial, approved,

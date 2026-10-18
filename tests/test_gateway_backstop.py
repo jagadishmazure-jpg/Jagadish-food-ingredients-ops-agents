@@ -6,13 +6,12 @@ cap. These tests pin the fix: every bypass below must be denied (or capped),
 and legitimate view queries must keep working.
 """
 
-import sqlite3
 
 import pytest
 
 from fooding.pii import scrub
 from fooding.telemetry import build_db
-from fooding.views import GatewayError, ROW_CAP, create_views, run_query
+from fooding.views import ROW_CAP, GatewayError, create_views, run_query
 
 
 @pytest.fixture()
